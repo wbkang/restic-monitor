@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "restic-monitor"
+version = "0.1.0"
+description = "Tray application to run restic backup on Windows"
+authors = ["Woongbin Kang <wbk@outlook.com>"]
+readme = "README.md"
+packages = [{include = "restic_monitor"}]
+
+[tool.poetry.dependencies]
+python = "^3.11,<3.12"
+pystray = "*"
+pywin32 = "^305"
+python-dateutil = "^2.8.2"
+filelock = "^3.8.2"
+aiodebug = "^2.3.0"
+
+[tool.poetry.group.dev.dependencies]
+pyinstaller = "^5.7.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

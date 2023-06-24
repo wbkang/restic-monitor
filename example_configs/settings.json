@@ -1,0 +1,18 @@
+{
+    "restic_exe": "C:\\bin\\restic.exe",
+    "args": [
+        "backup", 
+        "-vv", 
+        "--use-fs-snapshot", 
+        "--iexclude-file=C:\\Users\\myuser\\OneDrive\\restic-exclude.txt",
+        "C:\\",
+        "C:\\Program Files (x86)\\Battle.net", 
+        "C:\\Program Files (x86)\\Origin Games",
+        "C:\\Program Files (x86)\\Steam",
+        "C:\\Program Files (x86)\\Ubisoft"
+    ],
+    "min_idle_seconds": 300,
+    "min_seconds_between_backups": 900,
+    "no_backup_warning_seconds": 3600,
+    "ignore_exit_code_3": false
+}
