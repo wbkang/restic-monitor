@@ -139,11 +139,11 @@ Return code 3 indicates that there were files that were not backup-able.
 
 ### Running the program
 
-Inside `poetry shell`, run `py main.py --debug`
+Run `uv main.py --debug`
 
 ### Building the executable
 
-`pyinstaller main.spec -y` will produce the distributable package under `dist/app`, which can be dumped into the installation directory.
+`uv run pyinstaller main.spec -y` will produce the distributable package under `dist/app`, which can be dumped into the installation directory.
 
 ## Attribution
 

@@ -1,22 +1,27 @@
-[tool.poetry]
+[project]
 name = "restic-monitor"
 version = "0.1.0"
 description = "Tray application to run restic backup on Windows"
-authors = ["Woongbin Kang <wbk@outlook.com>"]
+authors = [{ name = "Woongbin Kang", email = "wbk@outlook.com" }]
+requires-python = ">=3.11.0, <3.12"
 readme = "README.md"
-packages = [{include = "restic_monitor"}]
+dependencies = [
+    "pystray",
+    "pywin32>=305,<306",
+    "python-dateutil>=2.8.2,<3",
+    "filelock>=3.8.2,<4",
+    "aiodebug>=2.3.0,<3",
+]
 
-[tool.poetry.dependencies]
-python = "^3.11,<3.12"
-pystray = "*"
-pywin32 = "^305"
-python-dateutil = "^2.8.2"
-filelock = "^3.8.2"
-aiodebug = "^2.3.0"
+[dependency-groups]
+dev = ["pyinstaller>=5.7.0,<6"]
 
-[tool.poetry.group.dev.dependencies]
-pyinstaller = "^5.7.0"
+[tool.hatch.build.targets.sdist]
+include = ["restic_monitor"]
+
+[tool.hatch.build.targets.wheel]
+include = ["restic_monitor"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
