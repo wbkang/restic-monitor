@@ -19,33 +19,12 @@ ResticMonitor is a tray application for Windows that can start a [restic](https:
 
 ## Installation
 
-Get the application distribution zip file, and unzip in `%LOCALAPPDATA%\restic-monitor`. The application will be under ``%LOCALAPPDATA%\restic-monitor\app`.
-
-In order to avoid the UAC prompt every time, configure a Scheduled Task that runs on login, with highest privilege. One day the installation will be automated.
-
-Task Settings:
-
-1. Open `taskschd.msc`.
-2. Create Task
-3. Name: `restic-monitor`
-4. Select **"Run only when user is logged on"**
-5. Check **"Run with highest privileges"**
-6. Go to **Triggers** Tab
-   1. Click **New**
-   2. Select **"At log on"** for "begin the task:"
-   3. Click **OK**
-7. Go to **Actions** Tab
-   1. Click **New**
-   2. Paste `%LOCALAPPDATA%\restic-monitor\app\restic-monitor.exe` in **Program/Script**.
-   3. Click **OK**
-8. Go to **Settings** Tab
-   1. Uncheck **"Stop the task if it runs longer than"**
-
-Create configuration files after.
+1. Download and extract the application distribution zip file.
+2. Run `Install.ps1` from the extracted folder. This script will automatically set up the application in `%LOCALAPPDATA%\restic-monitor`, configure a scheduled task with highest privileges, and create default configuration files.
 
 ### Configuration
 
-The configuration files for the app lives in `%LOCALAPPDATA%\restic-monitor`. Find examples in [example_configs](/example_configs) directory. You must create them after installing the program.
+The configuration files for the app live in `%LOCALAPPDATA%\restic-monitor`. Find examples in [example_configs](/example_configs) directory.
 
 After changing the config, click "reload" in the menu to restart the app.
 
@@ -137,13 +116,7 @@ Return code 3 indicates that there were files that were not backup-able.
 
 ## Development
 
-### Running the program
-
-Run `uv main.py --debug`
-
-### Building the executable
-
-`uv run pyinstaller main.spec -y` will produce the distributable package under `dist/app`, which can be dumped into the installation directory.
+For information on running and building the application, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 
 ## Attribution
 

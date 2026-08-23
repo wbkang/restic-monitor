@@ -4,6 +4,7 @@
 block_cipher = None
 
 import os
+import shutil
 
 datas = []
 
@@ -60,3 +61,16 @@ coll = COLLECT(
     upx_exclude=[],
     name='app',
 )
+
+# Automatically create a zip archive of the 'app' directory (from dist) for easy distribution
+app_dist_dir = os.path.join(os.getcwd(), 'dist', 'app')
+if os.path.exists(app_dist_dir):
+    # Copy installation/uninstallation scripts into the 'app' folder so they are included in the zip
+    for script in ["Install.ps1", "Uninstall.ps1"]:
+        script_src = os.path.join(os.getcwd(), script)
+        if os.path.exists(script_src):
+            print(f"Including {script} in the distribution archive.")
+            shutil.copy2(script_src, os.path.join(app_dist_dir, script))
+
+    print(f"Creating distribution archive: app.zip from {app_dist_dir}")
+    shutil.make_archive('app', 'zip', app_dist_dir)
