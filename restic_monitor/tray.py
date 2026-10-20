@@ -26,7 +26,8 @@ class ResticTray:
                  no_backup_warning_seconds: int,
                  pause_until_filename: str,
                  ignore_exit_code_3: bool,
-                 app_log:str) -> None:
+                 app_log:str,
+                 extra_monitors: list = None) -> None:
         self.logger = logging.getLogger("ResticTray")
         self.logger.setLevel(logging.DEBUG)
         # extracted during run_async()
@@ -61,18 +62,9 @@ class ResticTray:
                 ),
             menu.SEPARATOR,
             item(
-                '📜 Open the most recent Restic log',
-                lambda: self.tray_open_log(),
-                enabled=lambda _: self.tray_can_open_log()
-            ),
-            item(
                 '📂 Open App Directory',
                 lambda: self.tray_open_app_dir(),
                 default=True
-            ),
-            item(
-                '📂 Open App Log',
-                lambda: self.tray_open_app_log(),
             ),
             item(
                 '🔧 Open Rustic Shell',
@@ -95,6 +87,8 @@ class ResticTray:
             icon=self.icon_images[ResticTray.MAIN_ICON])
         patch_on_notify(self.icon)
         self.monitor : ResticMonitor = monitor
+        self.extra_monitors = list(extra_monitors) if extra_monitors else []
+        self.monitors = [self.monitor] + self.extra_monitors
         
         self.min_idle_seconds = min_idle_seconds
         self.run_requested = False
@@ -171,12 +165,29 @@ class ResticTray:
         logging.info("tray_request_stop_run outside")
         async def work():
             with self.lock:
-                self.monitor.cancel_run()
+                for m in self.monitors:
+                    if m.is_restic_running():
+                        m.cancel_run()
         self._fire_in_async(work())
 
     def tray_is_stoppable(self):
         with self.lock:
-            return self.monitor.is_restic_running()
+            return self.any_restic_running()
+
+    def _format_timedelta_compact(self, td: datetime.timedelta):
+        " compact d/h/m form used in tray status lines, e.g. 2d 3h 15m "
+        total = int(td.total_seconds())
+        days, rem = divmod(total, 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes = rem // 60
+        parts = []
+        if days:
+            parts.append(f"{days}d")
+        if hours:
+            parts.append(f"{hours}h")
+        if minutes or not parts:
+            parts.append(f"{minutes}m")
+        return " ".join(parts)
 
     def _format_timedelta_minutes(self, td: datetime.timedelta):
         minutes = td.total_seconds() / 60
@@ -197,6 +208,53 @@ class ResticTray:
             return " ".join(s)
         return "Less than a minute"
 
+    def any_restic_running(self):
+        with self.lock:
+            return any(m.is_restic_running() for m in self.monitors)
+
+    def running_monitor(self):
+        with self.lock:
+            for m in self.monitors:
+                if m.is_restic_running():
+                    return m
+        return None
+
+    def _monitor_status(self, m):
+        """Returns (category, text); category in good/warning/failed/none."""
+        code = m.last_run_code()
+        if code is None:
+            # no run observed in this process; fall back to the success marker
+            secs = m.seconds_since_last_successful_run()
+            if secs is None:
+                return ("none", "never")
+            ago = self._format_timedelta_compact(datetime.timedelta(seconds=secs))
+            return ("good", f"OK {ago} ago")
+        if code == 0 or (code == 3 and m.ignore_exit_code_3):
+            secs = m.seconds_since_last_successful_run()
+            if secs is None:
+                return ("good", "OK")
+            ago = self._format_timedelta_minutes(datetime.timedelta(seconds=secs))
+            return ("good", f"OK {ago} ago")
+        if m.is_last_run_cancelled():
+            return ("warning", "cancelled")
+        if code == 3:
+            return ("warning", "warnings(3)")
+        return ("failed", f"FAILED({code})")
+
+    def _targets_summary(self):
+        parts = []
+        for m in self.monitors:
+            _, text = self._monitor_status(m)
+            parts.append(f"{m.name}: {text}")
+        return " · ".join(parts)
+
+    def _needs_stale_warning(self):
+        for m in self.monitors:
+            s = m.seconds_since_last_successful_run()
+            if s is None or s > self.no_backup_warning_seconds:
+                return True
+        return False
+
     def sync_tray(self):
         '''
         Must be in the event loop
@@ -205,49 +263,31 @@ class ResticTray:
         '''
         self.logger.debug("sync_tray is running")
         asyncio.get_running_loop()
-        # reflect the latest state into the tray icon
-
-        def upgrade_icon_to_warning():
-            if self.icon.icon != self.icon_images[ResticTray.WARNING_ICON] and \
-                self.icon.icon != self.icon_images[ResticTray.FAILED_ICON]:
-                self.icon.icon = self.icon_images[ResticTray.WARNING_ICON]
 
         with self.lock:
-            if self.monitor.is_restic_running():
+            running = self.running_monitor()
+            if running is not None:
                 self.icon.icon = self.icon_images[ResticTray.RUNNING_ICON]
-                last_line = self.monitor.get_restic_last_lines(1)[0:64]
-                self.icon.title = f"In progress: {last_line}"
+                last_line = running.get_restic_last_lines(1)[0:64]
+                self.icon.title = f"In progress ({running.name}): {last_line}"
             elif self.is_paused():
                 self.icon.icon = self.icon_images[ResticTray.PAUSED_ICON]
                 pause_until_formatted = self.pause_until.strftime("%Y-%m-%d %I:%m %p")
                 self.icon.title = f"Paused until {pause_until_formatted}"
-            else: # idle state
-                last_code = self.monitor.last_run_code()
-                if last_code == 0 or (last_code == 3 and self.ignore_exit_code_3):
-                    self.icon.icon = self.icon_images[ResticTray.GOOD_ICON]
-                    self.icon.title = self.get_last_ran_text()
-                elif last_code is not None and last_code != 0:
-                    last_run_cancelled = self.monitor.is_last_run_cancelled()
-                    self.logger.debug(f"sync_tray: last_run_cancelled={last_run_cancelled}")
-                    if self.monitor.is_last_run_cancelled():
-                        self.icon.icon = self.icon_images[ResticTray.WARNING_ICON]
-                        self.icon.title = "Last run cancelled by user"
-                    elif last_code == 3:
-                        self.icon.icon = self.icon_images[ResticTray.WARNING_ICON]
-                        self.icon.title = "Some files were not backed up. Check the logs."
-                    else:
-                        self.icon.icon = self.icon_images[ResticTray.FAILED_ICON]
-                        self.icon.title = f"Last back up failed with code {last_code}. Check the logs."
+            else:  # idle state - aggregate across all targets
+                categories = [self._monitor_status(m)[0] for m in self.monitors]
+                summary = self._targets_summary()
+                stale = self._needs_stale_warning()
+                if "failed" in categories:
+                    self.icon.icon = self.icon_images[ResticTray.FAILED_ICON]
+                elif "warning" in categories or "none" in categories or stale:
+                    self.icon.icon = self.icon_images[ResticTray.WARNING_ICON]
                 else:
-                    self.icon.title = ""
-                
-                # additional warnings
-                if self.monitor.seconds_since_last_successful_run() is None:
-                    upgrade_icon_to_warning()
-                    self.icon.title = self.get_last_ran_text() + " " + self.icon.title
-                elif self.monitor.seconds_since_last_successful_run() > self.no_backup_warning_seconds:
-                    self.icon.title = f"It's been a while since the last successful backup! {self.icon.title}"
-                    upgrade_icon_to_warning()
+                    self.icon.icon = self.icon_images[ResticTray.GOOD_ICON]
+                if stale:
+                    self.icon.title = f"It's been a while since a successful backup! {summary}"
+                else:
+                    self.icon.title = summary
                 self.warn_once_an_hour()
 
         def try_update():
@@ -264,26 +304,26 @@ class ResticTray:
                 if not self.update_menu_queued:
                     self.update_menu_queued = True
                     self.loop.call_later(0.1, try_update)
-                    
+
         try_update()
-        
 
     def tray_get_info_line1_text(self):
         """ This is the first informational line that shows up in the context menu
         """
         with self.lock:
             idle_period_str = self._format_timedelta_minutes(datetime.timedelta(seconds=self.min_idle_seconds))
-            if not self.monitor.is_restic_running():
+            running = self.running_monitor()
+            if running is None:
                 return f"Wait for idle for {idle_period_str}"
             else:
-                short_summary = self.monitor.get_restic_last_lines(1)[:32]
-                return f"Running: {short_summary}"
-    
+                short_summary = running.get_restic_last_lines(1)[:32]
+                return f"Running {running.name}: {short_summary}"
+
     def tray_get_info_line2_text(self):
         """ This is the second informational line that shows up in the context menu
         """
         with self.lock:
-            return self.get_last_ran_text()
+            return self._targets_summary()
 
     def get_last_ran_text(self):
         """
@@ -345,8 +385,9 @@ class ResticTray:
             with self.lock:
                 if not self.tray_is_paused():
                     self.logger.info("Enabling pause")
-                    if self.monitor.is_restic_running():
-                        self.monitor.cancel_run()
+                    for m in self.monitors:
+                        if m.is_restic_running():
+                            m.cancel_run()
                     self._save_pause_until(datetime.datetime.now() + datetime.timedelta(hours=8))
                     self.wakeup_watcher_event.clear()
                 else:
@@ -362,7 +403,7 @@ class ResticTray:
         Returns true if a new backup job can be started.
         """
         with self.lock:
-            if self.monitor.is_restic_running():
+            if self.any_restic_running():
                 return False
             else:
                 paused = self.tray_is_paused()
@@ -384,35 +425,38 @@ class ResticTray:
     
     async def run_backup_async(self):
         """
-        Wrapper around actually triggering a new backup job.
+        Runs the primary backup and each extra backup sequentially.
 
-        If there is already a job running, that request is ignored.
+        If any job is already running, this request is ignored.
         """
-        if self.monitor.is_restic_running():
-            self.logger.debug("ResticTray:on_run_backup - already runnning!")
+        if self.any_restic_running():
+            self.logger.debug("ResticTray:run_backup_async - already running!")
             return
         def onprogress():
             self.sync_tray()
-            self.logger.debug(f"onprogress callback")
-        retcode, cancelled = await self.monitor.run_backup(onprogress)
-        self.icon.title = f"Return code is {retcode}"
-        if cancelled:
-            self.icon.notify(self.monitor.get_restic_last_lines(3), title=f"User cancelled backup. code {retcode}")
-        elif retcode != 0:
-            self.icon.notify(self.monitor.get_restic_last_lines(3), title=f"Restic failed with code {retcode}")
+        for m in self.monitors:
+            if self.quit:
+                break
+            retcode, cancelled = await m.run_backup(onprogress)
+            self.logger.info(f"{m.name} backup returned {retcode} (cancelled={cancelled})")
+            if cancelled:
+                self.icon.notify(m.get_restic_last_lines(3), title=f"{m.name}: cancelled (code {retcode})")
+                break  # user asked to stop; don't start the next target
+            elif not (retcode == 0 or (retcode == 3 and m.ignore_exit_code_3)):
+                self.icon.notify(m.get_restic_last_lines(3), title=f"{m.name}: failed with code {retcode}")
+            self.sync_tray()
         self.sync_tray()
         await asyncio.sleep(0)
 
     def warn_once_an_hour(self):
-        secs = self.monitor.seconds_since_last_successful_run()
-        if secs is None  or secs > self.no_backup_warning_seconds:
+        if self._needs_stale_warning():
             if self.last_old_backup_warn_time is not None and (datetime.datetime.now() - self.last_old_backup_warn_time) < datetime.timedelta(hours=1):
                 self.logger.debug(f"Skipping old backup warning. Last warning:{self.last_old_backup_warn_time}")
                 return
             self.logger.debug("Showing old backup warning")
             def notify():
                 if not self.quit:
-                    self.icon.notify(f"⚠️ It's been a long time since the last backup. {self.get_last_ran_text()}", "ResticMonitor")
+                    self.icon.notify(f"⚠️ It's been a long time since a backup. {self._targets_summary()}", "ResticMonitor")
             self.loop.call_later(1, notify)
             self.last_old_backup_warn_time = datetime.datetime.now()
 
@@ -444,7 +488,7 @@ class ResticTray:
                     waiter = asyncio.sleep(wait_time)
                 elif idle_time > self.min_idle_seconds or self.run_requested:
                     self.run_requested = False
-                    if self.monitor.is_restic_running():
+                    if self.any_restic_running():
                         self.logger.error("Already running... not possible check again in 10sec")
                         waiter = asyncio.sleep(10)
                     else:
@@ -479,7 +523,8 @@ class ResticTray:
         async def inner_shutdown():
             with self.lock:
                 self.logger.info("Shutting down from event loop side")
-                self.monitor.cancel_run()
+                for m in self.monitors:
+                    m.cancel_run()
                 self.quit = True
                 self.restart = restart
                 self.wakeup_watcher_event.set()

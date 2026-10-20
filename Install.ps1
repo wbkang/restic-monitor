@@ -107,8 +107,8 @@ try {
 {
     "restic_exe": "C:\\bin\\restic.exe",
     "args": [
-        "backup", 
-        "-vv", 
+        "backup",
+        "-v",
         "--use-fs-snapshot", 
         "--iexclude-file=C:\\Users\\myuser\\OneDrive\\restic-exclude.txt",
         "C:\\",

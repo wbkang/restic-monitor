@@ -62,15 +62,18 @@ coll = COLLECT(
     name='app',
 )
 
-# Automatically create a zip archive of the 'app' directory (from dist) for easy distribution
-app_dist_dir = os.path.join(os.getcwd(), 'dist', 'app')
+# Automatically create a zip archive for easy distribution.
+# Layout: the zip root contains the 'app/' payload folder PLUS Install.ps1 /
+# Uninstall.ps1 beside it, so Install.ps1's $PSScriptRoot\app resolves correctly.
+dist_dir = os.path.join(os.getcwd(), 'dist')
+app_dist_dir = os.path.join(dist_dir, 'app')
 if os.path.exists(app_dist_dir):
-    # Copy installation/uninstallation scripts into the 'app' folder so they are included in the zip
+    # Stage the install/uninstall scripts BESIDE the 'app' folder (not inside it)
     for script in ["Install.ps1", "Uninstall.ps1"]:
         script_src = os.path.join(os.getcwd(), script)
         if os.path.exists(script_src):
-            print(f"Including {script} in the distribution archive.")
-            shutil.copy2(script_src, os.path.join(app_dist_dir, script))
+            print(f"Including {script} beside the app/ folder in the distribution archive.")
+            shutil.copy2(script_src, os.path.join(dist_dir, script))
 
-    print(f"Creating distribution archive: app.zip from {app_dist_dir}")
-    shutil.make_archive('app', 'zip', app_dist_dir)
+    print(f"Creating distribution archive: app.zip from {dist_dir}")
+    shutil.make_archive('app', 'zip', dist_dir)

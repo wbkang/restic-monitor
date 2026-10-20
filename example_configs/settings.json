@@ -1,12 +1,12 @@
 {
     "restic_exe": "C:\\bin\\restic.exe",
     "args": [
-        "backup", 
-        "-vv", 
-        "--use-fs-snapshot", 
+        "backup",
+        "-v",
+        "--use-fs-snapshot",
         "--iexclude-file=C:\\Users\\myuser\\OneDrive\\restic-exclude.txt",
         "C:\\",
-        "C:\\Program Files (x86)\\Battle.net", 
+        "C:\\Program Files (x86)\\Battle.net",
         "C:\\Program Files (x86)\\Origin Games",
         "C:\\Program Files (x86)\\Steam",
         "C:\\Program Files (x86)\\Ubisoft"
@@ -14,5 +14,18 @@
     "min_idle_seconds": 300,
     "min_seconds_between_backups": 900,
     "no_backup_warning_seconds": 3600,
-    "ignore_exit_code_3": false
+    "ignore_exit_code_3": false,
+    "restic_log_retention_days": 7,
+    "extra_backups": {
+        "wsl": {
+            "exe": "wsl",
+            "args": [
+                "-d", "Ubuntu-24.04", "-u", "root", "--",
+                "bash", "-lc",
+                "source /usr/local/bin/restic-env && restic backup / -v --one-file-system --exclude-file /home/wbk/wbk-stow/wsl-restic-backup/backup.excludes --tag wsl --host wbkang-pc-wsl"
+            ],
+            "env": {},
+            "ignore_exit_code_3": true
+        }
+    }
 }

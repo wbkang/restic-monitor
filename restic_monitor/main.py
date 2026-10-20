@@ -15,6 +15,8 @@ MIN_IDLE_SECONDS_SETTING = 'min_idle_seconds'
 IGNORE_EXIT_CODE_3_SETTING = 'ignore_exit_code_3'
 NO_BACKUP_WARNING_SETTING = 'no_backup_warning_seconds'
 MIN_SECONDS_BETWEEN_BACKUPS_SETTING = 'min_seconds_between_backups'
+EXTRA_BACKUPS_SETTING = 'extra_backups'
+LOG_RETENTION_DAYS_SETTING = 'restic_log_retention_days'
 
 def elevate_if_needed(debug):
     ''' Not used if it's started w/ pyinstaller, since it does its own thing '''
@@ -51,6 +53,12 @@ def elevate_if_needed(debug):
         print(f"Running {args}")
         ctypes.windll.shell32.ShellExecuteW(None, "runas", new_args[0], " ".join(processed_args), None, 1)
         return False
+
+def parse_bool(v):
+    """Settings may carry legacy string booleans like "true"; accept both forms."""
+    if isinstance(v, str):
+        return v.strip().lower() in ("1", "true", "yes", "on")
+    return bool(v)
 
 def run():
 
@@ -125,15 +133,49 @@ def run():
             import aiodebug.log_slow_callbacks
             aiodebug.log_slow_callbacks.enable(0.05)
 
-        monitor = ResticMonitor(app_dir=rootappdir, restic_exe=settings[RESTIC_EXE_SETTING], args=settings[ARGS_SETTING], env=env)
-        
+        retention_days = int(settings.get(LOG_RETENTION_DAYS_SETTING, 180))
+        default_ignore3 = parse_bool(settings.get(IGNORE_EXIT_CODE_3_SETTING, False))
+
+        # migrate the pre-multi-target success marker so we don't lose state
+        legacy_marker = os.path.join(rootappdir, "restic-last-successful.marker")
+        primary_marker = os.path.join(rootappdir, "windows-last-successful.marker")
+        if os.path.exists(legacy_marker) and not os.path.exists(primary_marker):
+            try:
+                os.replace(legacy_marker, primary_marker)
+                logger.info("Migrated restic-last-successful.marker -> windows-last-successful.marker")
+            except OSError:
+                logger.warning("Could not migrate legacy success marker", exc_info=1)
+
+        monitor = ResticMonitor(
+            app_dir=rootappdir,
+            restic_exe=settings[RESTIC_EXE_SETTING],
+            args=settings[ARGS_SETTING],
+            env=env,
+            name="windows",
+            ignore_exit_code_3=default_ignore3,
+            log_retention_days=retention_days,
+        )
+
+        extra_monitors = []
+        for bname, cfg in settings.get(EXTRA_BACKUPS_SETTING, {}).items():
+            extra_monitors.append(ResticMonitor(
+                app_dir=rootappdir,
+                restic_exe=cfg["exe"],
+                args=cfg["args"],
+                env={**env, **cfg.get("env", {})},
+                name=bname,
+                ignore_exit_code_3=parse_bool(cfg.get(IGNORE_EXIT_CODE_3_SETTING, default_ignore3)),
+                log_retention_days=int(cfg.get(LOG_RETENTION_DAYS_SETTING, retention_days)),
+            ))
+
         tray = ResticTray(
             monitor=monitor,
+            extra_monitors=extra_monitors,
             min_idle_seconds=int(settings[MIN_IDLE_SECONDS_SETTING]),
             no_backup_warning_seconds=int(settings[NO_BACKUP_WARNING_SETTING]),
             min_seconds_between_backups=int(settings[MIN_SECONDS_BETWEEN_BACKUPS_SETTING]),
             pause_until_filename=os.path.join(rootappdir, PAUSE_UNTIL_FILENAME),
-            ignore_exit_code_3=bool(settings.get(IGNORE_EXIT_CODE_3_SETTING, False)),
+            ignore_exit_code_3=default_ignore3,
             app_log=os.path.join(rootappdir, "logs", "restic-monitor.log")
         )
         
