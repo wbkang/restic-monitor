@@ -15,12 +15,18 @@ ResticMonitor is a tray application for Windows that can start a [restic](https:
 * Pause for 8 hours not to be interrupted by backup. This is persisted across restarts (configurable).
 ![screenshot of pause](docs/pause_screenshot.png)
 
-* Open shell with the same restic environment variable for troubleshotting/restore.
+* Open Restic Shell: an interactive cmd with the configured restic environment variables applied and the restic executable on PATH, for troubleshooting and restores.
+
+* Multiple backup targets (e.g. windows plus WSL) run sequentially, with per-target status in the tray menu.
+
+* Per-target run logs, pruned automatically after a configurable retention period.
 
 ## Installation
 
 1. Download and extract the application distribution zip file.
 2. Run `install.cmd` from the extracted folder (or `Install.ps1` directly). This script will automatically set up the application in `%LOCALAPPDATA%\restic-monitor`, download the latest restic release from GitHub into `%LOCALAPPDATA%\restic-monitor\bin` (SHA256-verified), configure a scheduled task with highest privileges, and create default configuration files.
+
+To uninstall, use Windows "Apps & Features" (restic-monitor) or run `Uninstall.ps1` from the install directory. Your `settings.json` and `env.json` are preserved for future reinstalls.
 
 ### Configuration
 
@@ -50,19 +56,20 @@ env.json should contain the environment variables for the restic backup job. See
 4. `min_seconds_between_backups`: Minimum time between two consecutive backups.
 5. `no_backup_warning_seconds`: How many seconds since the last successful backup. Successful backup is defined as when restic executable returned the exit code 0.
 6. `ignore_exit_code_3`: Treat exit code 3 as success (`true` or `false`). If you don't really care about files not being backed up due to permissions issue, this can simplify the set up a lot.
+7. `restic_log_retention_days`: How many days to keep per-run backup logs (default 180). Each target's run logs live under `logs/<target>/`.
+8. `extra_backups`: Optional map of additional backup targets. Each entry supports `exe`, `args`, optional `env` (merged over `env.json`), optional `ignore_exit_code_3`, optional `restic_log_retention_days`. Targets run sequentially after the primary backup; each target has its own success marker and logs.
 
 Example:
 
 ```json
 {
-    "restic_exe": "C:\\bin\\restic.exe",
     "args": [
-        "backup", 
-        "-vv", 
-        "--use-fs-snapshot", 
+        "backup",
+        "-v",
+        "--use-fs-snapshot",
         "--iexclude-file=C:\\Users\\myuser\\OneDrive\\restic-exclude.txt",
         "C:\\",
-        "C:\\Program Files (x86)\\Battle.net", 
+        "C:\\Program Files (x86)\\Battle.net",
         "C:\\Program Files (x86)\\Origin Games",
         "C:\\Program Files (x86)\\Steam",
         "C:\\Program Files (x86)\\Ubisoft"
@@ -70,18 +77,33 @@ Example:
     "min_idle_seconds": 300,
     "min_seconds_between_backups": 900,
     "no_backup_warning_seconds": 3600,
-    "ignore_exit_code_3": false
+    "ignore_exit_code_3": false,
+    "restic_log_retention_days": 7,
+    "extra_backups": {
+        "wsl": {
+            "exe": "wsl",
+            "args": [
+                "-d", "Ubuntu-24.04", "-u", "root", "--",
+                "bash", "-lc",
+                "source /usr/local/bin/restic-env && restic backup / -v --one-file-system --tag wsl"
+            ],
+            "env": {},
+            "ignore_exit_code_3": true
+        }
+    }
 }
 ```
+
+The full-featured example lives in [example_configs](/example_configs).
 
 
 
 ## Troubleshooting
 
-Check the app log under `%LOCALPPDATA%\logs`. App logs can also be found in the tray menu.
+Logs live under `%LOCALAPPDATA%\restic-monitor\logs` and the directory opens via the tray menu ("Open App Directory").
 
-1. `restic-last.log` contains the log for the last restic invocation.
-2. `restic-monitor.log` contains the log for the application itself.
+1. `restic-monitor.log` (plus hourly `restic-monitor.log.*` rotations): the application log.
+2. `<target>/<target>-<timestamp>.log`: output of each restic invocation, one file per run, pruned after `restic_log_retention_days`.
 
 ## Tips
 
@@ -105,10 +127,12 @@ Return code 3 indicates that there were files that were not backup-able.
 
 1. `lock`: prevents two instances from running at the same time.
 2. `pause_until.txt`: stores the pause until time.
-3. `restic-last-successful.marker`: its last modification indicates the last successful run.
-4. `logs`: contains the log files.
-   1. `restic-monitor.log`, `restic-monitor.log.*`: application log
-   2. `restic-last.log`: contains the log for the last restic invocation.
+3. `<target>-last-successful.marker`: its modification time is the last successful run of that target (e.g. `windows-last-successful.marker`). The tray reads these at startup, so status survives restarts.
+4. `bin`: the restic executable provisioned by the installer.
+5. `app`: the application itself.
+6. `logs`: contains the log files.
+   1. `restic-monitor.log`, `restic-monitor.log.*`: application log (hourly rotation, capped)
+   2. `<target>/<target>-<timestamp>.log`: one log per restic run, pruned by `restic_log_retention_days`
 
 ### How is the idle time calculated?
 
