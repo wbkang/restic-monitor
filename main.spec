@@ -63,13 +63,14 @@ coll = COLLECT(
 )
 
 # Automatically create a zip archive for easy distribution.
-# Layout: the zip root contains the 'app/' payload folder PLUS Install.ps1 /
-# Uninstall.ps1 beside it, so Install.ps1's $PSScriptRoot\app resolves correctly.
+# Layout: the zip root contains the 'app/' payload folder PLUS install.cmd /
+# Install.ps1 / Uninstall.ps1 beside it, so Install.ps1's $PSScriptRoot\app
+# resolves correctly and users get a double-clickable entry point.
 dist_dir = os.path.join(os.getcwd(), 'dist')
 app_dist_dir = os.path.join(dist_dir, 'app')
 if os.path.exists(app_dist_dir):
     # Stage the install/uninstall scripts BESIDE the 'app' folder (not inside it)
-    for script in ["Install.ps1", "Uninstall.ps1"]:
+    for script in ["install.cmd", "Install.ps1", "Uninstall.ps1"]:
         script_src = os.path.join(os.getcwd(), script)
         if os.path.exists(script_src):
             print(f"Including {script} beside the app/ folder in the distribution archive.")
