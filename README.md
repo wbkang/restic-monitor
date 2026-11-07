@@ -20,7 +20,7 @@ ResticMonitor is a tray application for Windows that can start a [restic](https:
 ## Installation
 
 1. Download and extract the application distribution zip file.
-2. Run `Install.ps1` from the extracted folder. This script will automatically set up the application in `%LOCALAPPDATA%\restic-monitor`, configure a scheduled task with highest privileges, and create default configuration files.
+2. Run `install.cmd` from the extracted folder (or `Install.ps1` directly). This script will automatically set up the application in `%LOCALAPPDATA%\restic-monitor`, download the latest restic release from GitHub into `%LOCALAPPDATA%\restic-monitor\bin` (SHA256-verified), configure a scheduled task with highest privileges, and create default configuration files.
 
 ### Configuration
 
@@ -44,7 +44,7 @@ env.json should contain the environment variables for the restic backup job. See
 
 `settings.json` defines the settings for the program.
 
-1. `restic_exe`: is the location for the restic executable.
+1. `restic_exe`: optional location of the restic executable. When omitted, the app uses the copy the installer provisioned at `%LOCALAPPDATA%\restic-monitor\bin\restic.exe`.
 2. `args`: is an array of Strings to run the backup job.
 3. `min_idle_seconds`: Minimum idle seconds before automatically running the backup. Idle seconds is defined by the seconds elapsed since the last user interaction (e.g., a keystroke or mouse movement).
 4. `min_seconds_between_backups`: Minimum time between two consecutive backups.

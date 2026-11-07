@@ -1,5 +1,4 @@
 {
-    "restic_exe": "C:\\bin\\restic.exe",
     "args": [
         "backup",
         "-v",

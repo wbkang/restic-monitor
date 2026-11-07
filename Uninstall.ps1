@@ -36,7 +36,15 @@ try {
         Write-Host "Application directory '$appDir' not found. Skipping."
     }
 
-    # Note: We are NOT removing the configDir ($installDir) itself, 
+    # 4. Remove the provisioned restic binary
+    $binDir = Join-Path $installDir "bin"
+    if (Test-Path $binDir) {
+        Write-Host "Removing provisioned restic binary: $binDir..."
+        Remove-Item -Path $binDir -Recurse -Force
+        Write-Host "Successfully removed restic binary." -ForegroundColor Green
+    }
+
+    # Note: We are NOT removing the configDir ($installDir) itself,
     # to allow users to keep their env.json and settings.json for future reinstalls/updates.
 
     Write-Host "Uninstallation complete!" -ForegroundColor Green

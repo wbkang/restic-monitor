@@ -67,7 +67,7 @@ class ResticTray:
                 default=True
             ),
             item(
-                '🔧 Open Rustic Shell',
+                '🔧 Open Restic Shell',
                 lambda: self.tray_open_shell()
             ),
             menu.SEPARATOR,
@@ -351,7 +351,9 @@ class ResticTray:
 
     def tray_open_shell(self):
         self.logger.debug("Opening the shell")
-        openshell(self.monitor.app_dir)
+        openshell(self.monitor.app_dir,
+                  restic_exe=self.monitor.restic_exe,
+                  env=self.monitor.env)
 
     def tray_can_open_log(self):
         with self.lock:

@@ -14,6 +14,56 @@ if (-not $principalCheck.IsInRole([Security.Principal.WindowsBuiltInRole]::Admin
     exit
 }
 
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+# Always provision our own restic binary so the app is self-contained,
+# independent of whatever restic may or may not exist on the machine.
+function Install-Restic {
+    param([string]$DestDir)
+
+    $dest = Join-Path $DestDir "restic.exe"
+    $apiUrl = "https://api.github.com/repos/restic/restic/releases/latest"
+    Write-Host "Querying latest restic release..."
+    $release = Invoke-RestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "restic-monitor-installer" }
+    $asset = $release.assets | Where-Object { $_.name -match '^restic_.+_windows_amd64\.zip$' } | Select-Object -First 1
+    $sumsAsset = $release.assets | Where-Object { $_.name -eq "SHA256SUMS" } | Select-Object -First 1
+    if (-not $asset -or -not $sumsAsset) {
+        throw "Could not find restic windows_amd64 release assets for $($release.tag_name)"
+    }
+
+    $tmp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ("restic-download-" + [guid]::NewGuid().ToString()))
+    try {
+        $zipPath = Join-Path $tmp $asset.name
+        $sumsPath = Join-Path $tmp "SHA256SUMS"
+        Write-Host "Downloading $($asset.name)..."
+        Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -UserAgent "restic-monitor-installer"
+        Invoke-WebRequest -Uri $sumsAsset.browser_download_url -OutFile $sumsPath -UserAgent "restic-monitor-installer"
+
+        $sumLine = (Get-Content $sumsPath) | Where-Object { $_ -match [regex]::Escape($asset.name) } | Select-Object -First 1
+        if (-not $sumLine) {
+            throw "$($asset.name) not found in SHA256SUMS"
+        }
+        $expected = ($sumLine -split '\s+')[0]
+        $actual = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash
+        if ($actual -ne $expected.ToUpper()) {
+            throw "SHA256 mismatch for $($asset.name): expected $expected, got $actual"
+        }
+        Write-Host "restic $($release.tag_name) downloaded, SHA256 verified." -ForegroundColor Green
+
+        Expand-Archive -Path $zipPath -DestinationPath $tmp -Force
+        # the zip ships a versioned exe like restic_0.19.1_windows_amd64.exe
+        $extracted = Get-ChildItem -Path $tmp -Filter "*.exe" | Select-Object -First 1
+        if (-not $extracted) {
+            throw "No executable found in $($asset.name) after extraction"
+        }
+        New-Item -ItemType Directory -Path $DestDir -Force | Out-Null
+        Copy-Item $extracted.FullName $dest -Force
+        & $dest version
+    } finally {
+        Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # App metadata for Apps & Features registration
 $appDisplayName   = "restic-monitor"
 $appDisplayVersion = "1.0.0"
@@ -43,6 +93,10 @@ if ($resticProcesses) {
 }
 
 try {
+    # 0. Provision restic (always, so the app owns its binary)
+    $binDir = Join-Path $installDir "bin"
+    Install-Restic -DestDir $binDir
+
     # 1. Create directories
     if (-not (Test-Path $appDir)) {
         Write-Host "Creating application directory: $appDir"
@@ -68,8 +122,7 @@ try {
         Start-Sleep -Seconds 2
     }
 
-    # 2. Copy application files
-    # We assume the 'app' folder (from PyInstaller) is in the same directory as this script is running from
+    # 2. Copy application files    # We assume the 'app' folder (from PyInstaller) is in the same directory as this script is running from
     $sourceAppDir = Join-Path $currentDir "app"
     if (Test-Path $sourceAppDir) {
         Write-Host "Copying application files from $sourceAppDir to $appDir..."
@@ -105,7 +158,6 @@ try {
         Write-Host "Creating default settings.json..."
         $settingsTemplate = @'
 {
-    "restic_exe": "C:\\bin\\restic.exe",
     "args": [
         "backup",
         "-v",

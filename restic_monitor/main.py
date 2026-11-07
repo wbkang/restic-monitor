@@ -10,6 +10,7 @@ SETTINGS_FILENAME = "settings.json"
 ENV_FILENAME = "env.json"
 
 RESTIC_EXE_SETTING = "restic_exe"
+RESTIC_BIN_DIRNAME = "bin"
 ARGS_SETTING = "args"
 MIN_IDLE_SECONDS_SETTING = 'min_idle_seconds'
 IGNORE_EXIT_CODE_3_SETTING = 'ignore_exit_code_3'
@@ -53,6 +54,11 @@ def elevate_if_needed(debug):
         print(f"Running {args}")
         ctypes.windll.shell32.ShellExecuteW(None, "runas", new_args[0], " ".join(processed_args), None, 1)
         return False
+
+def default_restic_exe(rootappdir):
+    """restic provisioned by the installer, used when settings.json omits restic_exe"""
+    import os
+    return os.path.join(rootappdir, RESTIC_BIN_DIRNAME, "restic.exe")
 
 def parse_bool(v):
     """Settings may carry legacy string booleans like "true"; accept both forms."""
@@ -135,6 +141,8 @@ def run():
 
         retention_days = int(settings.get(LOG_RETENTION_DAYS_SETTING, 180))
         default_ignore3 = parse_bool(settings.get(IGNORE_EXIT_CODE_3_SETTING, False))
+        restic_exe = settings.get(RESTIC_EXE_SETTING) or default_restic_exe(rootappdir)
+        logger.info(f"Using restic executable: {restic_exe}")
 
         # migrate the pre-multi-target success marker so we don't lose state
         legacy_marker = os.path.join(rootappdir, "restic-last-successful.marker")
@@ -148,7 +156,7 @@ def run():
 
         monitor = ResticMonitor(
             app_dir=rootappdir,
-            restic_exe=settings[RESTIC_EXE_SETTING],
+            restic_exe=restic_exe,
             args=settings[ARGS_SETTING],
             env=env,
             name="windows",
